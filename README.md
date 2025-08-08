@@ -1,73 +1,78 @@
-# Welcome to your Lovable project
+## Overview
 
-## Project info
+This document outlines the major bugs that were discovered and resolved in the
+Scheduling App
 
-**URL**: https://lovable.dev/projects/94b52f1d-10a5-4e88-9a9c-5c12cf45d83a
+---
 
-## How can I edit this code?
+## Critical Fixes Implemented
 
-There are several ways of editing your application.
+### 1. Timezone Display Errors in Appointments
 
-**Use Lovable**
+**File**: `src/utils/dateFormatter.ts`
+**Severity**: Critical
+**Status**: Fixed
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/94b52f1d-10a5-4e88-9a9c-5c12cf45d83a) and start prompting.
+#### Problem
 
-Changes made via Lovable will be committed automatically to this repo.
+Appointment times displayed inconsistently across users in different timezones. A
+booking at 4:00 PM EST appeared as 1:00 PM PST, leading to:
 
-**Use your preferred IDE**
+- Missed meetings
+- Confusion in customer support
+- Frustration and loss of trust
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+#### Root Cause
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Timestamps were rendered using `new Date().toLocaleString()` without setting a
+consistent server-side timezone.
 
-Follow these steps:
+#### Fix
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+Replaced local formatting with a UTC-standardized formatter using `date-fns-tz`:
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```typescript
+format(utcToZonedTime(appointmentTimeUTC, userTimeZone), 'hh:mm a zzz');
 ```
 
-**Edit a file directly in GitHub**
+#### Impact
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- ✅ Accurate appointment display in all user timezones
+- ✅ Fewer missed appointments
+- ✅ Time consistency across platforms
 
-**Use GitHub Codespaces**
+---
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### 2. Duplicate Bookings on Retry
 
-## What technologies are used for this project?
+**File**: `src/hooks/useBookAppointment.ts`
+**Severity**: High
+**Status**: ✅ Fixed
 
-This project is built with:
+#### Problem
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Users experiencing network issues and retrying caused **duplicate bookings**, which
+cluttered the database and overbooked slots.
 
-## How can I deploy this project?
+#### Root Cause
 
-Simply open [Lovable](https://lovable.dev/projects/94b52f1d-10a5-4e88-9a9c-5c12cf45d83a) and click on Share -> Publish.
+No idempotency token was implemented to recognize retries of the same booking.
 
-## Can I connect a custom domain to my Lovable project?
+#### Fix
 
-Yes, you can!
+Introduced a unique `x-request-id` in each booking attempt and deduplicated on the
+server:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```typescript
+// Frontend
+axios.post('/api/book', payload, {
+  headers: {'x-request-id': uuidv4()},
+});
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+```ts
+// Backend
+if (hasAlreadyProcessed(requestId)) return;
+```
+
+---
